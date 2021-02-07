@@ -1,37 +1,48 @@
 (ns stack.core)
 
-(defn- add-action
+(defn- store-action-inner
   [store action store-with-prev]
   (if store-with-prev
-    (let [head (list (first store))
-          new-head (cons action head)]
-      (cons new-head (rest store)))
-    (cons action store)))
-
-(comment
-  (-> nil
-      (add-action 4 false)
-      (add-action 3 false)
-      (add-action 2 false)
-      (add-action 1 true)
-      ))
+    (let [head (first store)
+          new-head (conj head action)]
+      (conj (rest store) new-head))
+    (conj store (list action))))
 
 (defn store-action
-  [db action & [{:keys [path limit store-with-prev]}]]
-  (let [path (or path :undo)
+  [db action & [{:keys [undo-path limit store-with-prev]}]]
+  (let [path (or undo-path :undo)
         limit (or limit 25)]
     (update db path
             (fn [store]
-              (let [new-store (add-action store action store-with-prev)]
+              (let [new-store (store-action-inner store action store-with-prev)]
                 (if (> (count new-store) limit)
                   (butlast new-store)
                   new-store))))))
 
-(-> {}
-    (store-action 1)
-    (store-action 2)
-    (store-action 3))
+(defn undo-action
+  [db & [{:keys [undo-path redo-path]}]]
+  (let [undo-path (or undo-path :undo)
+        redo-path (or redo-path :redo)
+        undo-store (get db undo-path)
+        action (first undo-store)]
+    {:action action
+     :db (-> db
+             (update undo-path rest)
+             (update redo-path
+                     #(if (seq undo-store)
+                        (conj % action)
+                        %)))}))
 
-(defn undo [])
-
-(defn redo [])
+(defn redo-action
+  [db & [{:keys [undo-path redo-path]}]]
+  (let [undo-path (or undo-path :undo)
+        redo-path (or redo-path :redo)
+        redo-store (get db redo-path)
+        action (first redo-store)]
+    {:action action
+     :db (-> db
+             (update redo-path rest)
+             (update undo-path
+                     #(if (seq redo-store)
+                        (conj % action)
+                        %)))}))
